@@ -417,26 +417,70 @@ Từ Spark 3.0, AQE mang đến khả năng tối ưu hóa động. Thay vì ch�
 
 **Phân vùng (Partitioning)** là đơn vị song song cơ bản của Spark. Hiệu năng của Spark phụ thuộc trực tiếp vào việc bạn chia dữ liệu khéo léo như thế nào.
 
-
-
 ### 8.1. Nghệ thuật chọn kích thước Partition
+* **Quá ít Partition:** Không tận dụng hết số lượng Core CPU (low concurrency). Mỗi partition quá lớn dẫn đến áp lực bộ nhớ (Memory Pressure) dẫn đến áp lực bộ nhớ cho Executor, dễ gây OOM. 
+
+* **Quá nhiều Partition:** Mỗi task trong Spark có một overhead nhất định (vài mili giây để khởi động). Hàng triệu partition nhỏ sẽ khiến thời gian quản lý task lớn hơn thời gian xử lý thực tế. 
+Hơn nữa, nó tạo ra áp lực lên Driver (quản lý metadata) và tạo ra bão file nhỏ trên HDFS/S3.
+
+Quy tắc vàng: Kích thước lý tưởng cho partition là khoảng **128MB đến 200MB** (tương đương kích thước block mặc định của HDFS/Parquet). Tổng số partition nên bằng khoảng 2 đến 3 lần tổng số core CPU trong cluster để đảm bảo khả năg cân bằng tải. 
 
 ### 8.2. Repartition vs. Coalesce
 
+Hai hàm này thường gây nhầm lẫn nhưng cơ chế hoạt động hoàn toàn khác nhau:
+* **repartition:** Thực hiện một Full Shuffle để tái phân phối dữ liệu ngẫu nhiên (Round Robin) thành n partition. 
+Nó đảm bảo dữ liệu được chia đều tuyệt đối. Dùng khi muốn tăng số partition hoặc xử lý data skew. 
+
+* **coalesce:** Chỉ dùng để **giảm** số lượng partition. Nó sử dụng thuật toán gộp các partition cục bộ mà **không cần shuffle**
+(Narrow Dependency). Ví dụ gộp partition 1 và 2 thành partition A mới trên cùng một máy. Nó hiệu quả hơn nhiều so với `repartition`
+nhưng có thể gây lệch dữ liệu nếu các partition gốc có kích thước không đều. Thường dùng trước khi ghi file ra đĩa để giảm số lượng file kết quả. 
+
 ### 8.3. Vấn đề Data Skew (Lệch dữ liệu)
+
+Data Skew là kẻ thù số một của hệ thống phân tán. Nó xảy ra khi dữ liệu phân bố không đều giữa các partition (ví dụ: Key="NULL" chiếm 80% dữ liệu).
+* **Hậu quả:** Hiện tượng "Straggler tasks" - 99% task chạy xong trong 1 phút, nhưng 1 task cuối cùng chạy mất 1 tiếng hoặc bị OOM. Toàn bộ Job bị kéo chậm lại theo task chậm nhất này. 
+* **Giải pháp:** Sử dụng kỹ thuật **Salting** (thêm tiền tố ngẫu nhiên vào Key để chia nhỏ key bị lệnh ra nhiều phần), hoặc bật tính năng AQE để Spark tự động quản lý. 
 
 ## Chương 9. Chuyển đổi tư duy: Từ Pandas sang Spark
 
+Đối với các nhà khoa học dữ liệu quen thuộc với Pandas, việc chuyển sang Spark không chỉ là học cú pháp mới, mà là thay đổi hoàn toàn tư duy (Paradigm Shift) từ xử lý tập trung sang phân tán.
+
 ### 9.1. Sự khác biệt cốt lõi về mô hình tư duy
+
+* **Giới hạn bộ nhớ:** Pandas yêu cầu toàn bộ dữ liệu phải nằm gọn trong RAM của một máy tính. Spark cho phép xử lý dữ liệu lướn gấp nhiều lần tổng RAM của cả cụm nhờ cơ chế chia nhỏ (partitioning) và tràn đĩa (spill-to-disk).
+
+* **Tính khả biến (mutability):** Pandas DataFrame có thể thay đổi giá trị tại chỗ (mutable). Spark DataFrame là bất biến (Immutable). Bạn không thể gán `df['col'] = 5`. Bạn chỉ có thể tạo ra một Dataframe mới dựa trên biến đổi của DataFrame cũ. Điều này giúp Spark an toàn trong môi trường đa luồng và chịu lỗi. 
+
+* **Thứ tự dữ liệu:** TRong Pandas, thứ tự các hàng (index) được bảo toàn mặc định. Trong Spark, do dữ liệu phân tán trên nhiều máy và xử lý song song, thứ tự các hàng là ngẫu nhiên và không được đảm bảo trừ khi bạn gọi lệnh sắp xếp (`orderBy`) rõ ràng. Việc phụ thuộc vào thứ tự hàng (như `iloc` trong Pandas) là rất tốn kém trong Spark. 
 
 ### 9.2. Khi nào nên dùng Spark thay vì Pandas? 
 
+Đừng dùng "dao mổ trâu để giết gà". Pandas vẫn nhanh hơn và thuận tiện hơn nhiều cho dữ liệu nhỏ và vừa. Hãy chuyển sang Spark khi:
+* Dữ liệu vượt quá giới hạn RAM của một máy đơn lẻ (thường là > 10GB - 50GB tùy máy).
+* Cần xử lý dữ liệu phức tạp từ các nguồn phân tán (HDFS, S3, Hive, Cassandra).
+* Thời gian xử lý trên Pandas quá lâu (hàng giờ) và cần song song hoá để giảm xuống hàng phút. 
 
 ### Cầu nối: Pandas API on Spark
 
+Để giảm rào cản nhập môn, từ phiên bản 3.2, Spark cung cấp `pyspark.pandas` (trước đây là dự án Koalas). Nó cho phép chạy code cú pháp Pandas trên nền tảng phân tán của Spark.
+
+**Ví dụ minh hoạ:**
+```Python
+# Thay vì import pandas as pd
+import pyspark.pandas as ps
+
+# Sử dụng API y hệt Pandas
+df = ps.read_csv("large_dataset.csv")
+df['total'] = df['quantity'] * df['price']
+print(df.head())
+```
+
+Mặc dù cú pháp giống hệt, nhưng bên dưới `pyspark.pandas` vẫn tuân thủ các quy tắc của Spark: Lazy Evaluation và Distributed Processing. Các thao tác vốn dĩ chậm trên hệ phân tán (như duyệt qua từng hàng `iterrows`) vẫn sẽ chậm dù bạn dùng API này. 
+
 ## Kết luận 
 
-
+Apache Spark không chỉ là một thư viện phần mềm; nó là một hệ điều hành dành cho dữ liệu lớn. Để làm chủ Spark, người kỹ sư không thể chỉ dừng lại ở việc biết các hàm API. Việc thấu hiểu kiến trúc Master-Slave, cơ chế Lazy Evaluation, mô hình Unified Memory, và bản chất vật lý của quá trình Shuffle là yếu tố phân định giữa một người viết code chạy được và một chuyên gia có khả năng tối ưu hóa hệ thống xử lý hàng Petabyte dữ liệu. Sự chuyển dịch từ RDD sang DataFrame/Dataset và sự ra đời của Catalyst/Tungsten minh chứng cho xu hướng của Spark: che giấu sự phức tạp của tính toán phân tán để người dùng tập trung vào logic nghiệp vụ, 
+nhưng sức mạnh thực sự vẫn nằm trong tay những người hiểu rõ "bên dưới nắp capo" đang diễn ra điều gì.
 
 
 

@@ -18,60 +18,69 @@ fi
 # --- 3. Xử lý tham số ---
 START_BLOCK=$1
 END_BLOCK=$2
-BATCH_SIZE=${3:-10}
-MAX_WORKERS=${4:-5}
+BATCH_SIZE=${3:-${DEFAULT_BATCH_SIZE:-100}}
+MAX_WORKERS=${4:-${DEFAULT_MAX_WORKERS:-5}}
 
 if [ -z "$START_BLOCK" ] || [ -z "$END_BLOCK" ]; then
     echo "⚠️  Cách dùng: ./scripts/export_contracts.sh <START> <END> [BATCH] [WORKERS]"
     exit 1
 fi
 
-# --- ĐỊNH NGHĨA FILE ---
-# INPUT: Lấy từ file token_transfers (File này bạn đã có và chắc chắn có dữ liệu)
-INPUT_FILE="$DATA_DIR/token_transfers_${START_BLOCK}_${END_BLOCK}.csv"
-# TEMP: File chứa danh sách địa chỉ để quét
-CONTRACT_ADDR_FILE="$DATA_DIR/contract_addresses_${START_BLOCK}_${END_BLOCK}.txt"
-# OUTPUT: File kết quả dạng CSV
-CONTRACTS_OUTPUT="$DATA_DIR/contracts_${START_BLOCK}_${END_BLOCK}.csv"
+# Định nghĩa tên các file
+RECEIPTS_INPUT_FILE="$DATA_DIR/receipts_${START_BLOCK}_${END_BLOCK}.csv"
+ADDRESSES_FILE="$DATA_DIR/contract_addresses_${START_BLOCK}_${END_BLOCK}.txt"
+CONTRACTS_FILE="$DATA_DIR/contracts_${START_BLOCK}_${END_BLOCK}.csv"
 
-# Kiểm tra file input
-if [ ! -f "$INPUT_FILE" ]; then
-    echo "❌ Lỗi: Không tìm thấy file Token Transfers: $INPUT_FILE"
-    echo "👉 Hãy chạy script 'extract_token_transfers.sh' trước."
+# Kiểm tra file input có tồn tại không
+if [ ! -f "$RECEIPTS_INPUT_FILE" ]; then
+    echo "❌ Lỗi: Không tìm thấy file receipts đầu vào: $RECEIPTS_INPUT_FILE"
+    echo "👉 Bạn cần chạy lệnh export_receipts_and_logs trước."
     exit 1
 fi
 
 echo "=================================================="
-echo "🏗️  Bước 1: Trích xuất địa chỉ Contract từ Token Transfers..."
-echo "📂 Nguồn: $INPUT_FILE"
+echo "🏗️  EXPORT CONTRACTS"
+echo "=================================================="
 
-# Lệnh này lấy cột 1 (token_address), bỏ dòng header, sort và uniq để lấy danh sách duy nhất
-cut -d ',' -f 1 "$INPUT_FILE" | sed '1d' | sort | uniq > "$CONTRACT_ADDR_FILE"
+# --- TỐI ƯU HÓA: Chỉ trích xuất nếu file chưa tồn tại ---
+if [ -f "$ADDRESSES_FILE" ]; then
+    echo "✅ File contract addresses đã tồn tại ($ADDRESSES_FILE)."
+    echo "⏩ Bỏ qua bước trích xuất để tiết kiệm thời gian."
+else
+    echo "🔍 Bước 1: Trích xuất Contract Addresses từ Receipts..."
+    ethereumetl extract_csv_column \
+        --input "$RECEIPTS_INPUT_FILE" \
+        --column contract_address \
+        --output "$ADDRESSES_FILE"
 
-COUNT=$(wc -l < "$CONTRACT_ADDR_FILE" | xargs)
-echo "📊 Tìm thấy $COUNT địa chỉ contract cần lấy thông tin."
-
-if [ "$COUNT" -eq "0" ]; then
-    echo "⚠️  Không tìm thấy địa chỉ nào."
-    exit 0
+    # Kiểm tra nếu file rỗng hoặc không có địa chỉ hợp lệ
+    if [ ! -s "$ADDRESSES_FILE" ]; then
+        echo "❌ Lỗi: Không tìm thấy địa chỉ contract nào trong file receipts."
+        rm -f "$ADDRESSES_FILE"
+        exit 1
+    fi
 fi
 
-echo "📡 Bước 2: Tải thông tin Contracts (Bytecode, ERC type)..."
-echo "⚙️  Provider: $PROVIDER_URI"
-echo "⚙️  Output: $CONTRACTS_OUTPUT"
+echo "📡 Bước 2: Tải Contract Data (bytecode, function sighash)..."
+echo "⚙️  Batch Size: $BATCH_SIZE | Workers: $MAX_WORKERS"
+echo "🔗 Provider: $PROVIDER_URI"
 
+# Chạy lệnh export (ẩn warning không quan trọng)
 ethereumetl export_contracts \
-    --contract-addresses "$CONTRACT_ADDR_FILE" \
+    --contract-addresses "$ADDRESSES_FILE" \
     --provider-uri "$PROVIDER_URI" \
-    --output "$CONTRACTS_OUTPUT" \
     --batch-size "$BATCH_SIZE" \
-    --max-workers "$MAX_WORKERS"
+    --max-workers "$MAX_WORKERS" \
+    --output "$CONTRACTS_FILE" 2>&1 | grep -v "pkg_resources\|evmdasm.disassembler"
 
+# Kiểm tra kết quả
 if [ $? -eq 0 ]; then
-    echo "✅ Thành công! File contracts (CSV) lưu tại:"
-    echo "👉 $CONTRACTS_OUTPUT"
-    # Xóa file tạm
-    rm "$CONTRACT_ADDR_FILE"
+    echo "✅ Xong! Đã xóa file addresses tạm để giải phóng ổ cứng."
+    rm "$ADDRESSES_FILE" # Chỉ xóa khi thành công hoàn toàn
+    echo "📂 Output: $CONTRACTS_FILE"
+    echo "=================================================="
 else
-    echo "❌ Có lỗi xảy ra."
+    echo "❌ Có lỗi xảy ra khi tải dữ liệu contracts."
+    echo "💡 File addresses tạm vẫn được giữ lại để bạn chạy lại lệnh lần sau."
+    exit 1
 fi

@@ -59,9 +59,23 @@ services:
     networks:
       - spark-network
 
+  jupyter:
+    image: jupyter/pyspark-notebook:spark-3.5.0
+    container_name: jupyter
+    ports:
+      - "8888:8888" # Cổng truy cập Notebook từ trình duyệt
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077 # Trỏ thẳng tới Master trong nội bộ
+    volumes:
+      - ./apps:/home/jovyan/work # Lưu notebook vào thư mục apps của bạn
+      - ./data:/opt/spark/data   # Mount dữ liệu giống hệt Worker để đọc file path khớp nhau
+      - spark-events:/opt/spark/spark-events # Để ghi log sự kiện
+    user: root # Cấp quyền root để mount vào /opt/spark/data không bị lỗi permission
+    networks:
+      - spark-network
+
 networks:
   spark-network:
     driver: bridge
-
 volumes:
   spark-events:

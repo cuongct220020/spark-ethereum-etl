@@ -29,7 +29,9 @@ pip install -r requirements.txt
 
 First, get the block range for a specific date:
 ```bash
-get_block_range --start-date YYYY-MM-DD --end-date YYYY-MM-DD
+chmod +x ./scripts/get_block_range
+
+./script/get_block_range --start-date YYYY-MM-DD --end-date YYYY-MM-DD
 ```
 
 For example, to extract 100 blocks in the range [20659158, 20659258]:

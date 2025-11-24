@@ -37,25 +37,34 @@ For example, to extract 100 blocks in the range [20659158, 20659258]:
 # Create data directory
 mkdir -p data
 
+# Grant execution permission
+chmod +x ./scripts/export_blocks_transactions
+
 # Extract transactions for the block range
-export_blocks_transactions --start-block 20659158 --end-block 20659258 --provider-uri https://eth.llamarpc.com
+./scripts/export_blocks_transactions 20659158 20659258
 ```
 
 ### 2. Extract Additional Data Types
 
 Extract supporting data for the same block range:
 ```bash
+# Grant execution permission
+chmod +x ./scripts/export_receipts_logs
+chmod +x ./scripts/export_token_transfers
+chmod +x ./scripts/export_contracts
+chmod +x ./scripts/export_tokens
+
 # Extract transaction receipts
-export_receipts_logs --start-block 20659158 --end-block 20659258 --provider-uri https://eth.llamarpc.com
+./scripts/export_receipts_logs 20659158 20659258
 
 # Extract token transfers
-export_token_transfers --start-block 20659158 --end-block 20659258 --provider-uri https://eth.llamarpc.com
+./scripts/export_token_transfers 20659158 20659258
 
 # Extract contract information
-export_contracts --start-block 20659158 --end-block 20659258 --provider-uri https://eth.llamarpc.com
+./scripts/export_contracts 20659158 20659258
 
 # Extract token information
-export_tokens --start-block 20659158 --end-block 20659258 --provider-uri https://eth.llamarpc.com
+./scripts/export_tokens 20659158 20659258
 ```
 
 ### 3. Prepare Environment

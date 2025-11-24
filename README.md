@@ -1,3 +1,4 @@
 # spark-ethereum-etl
 
-Lấy dữ liệu trong ngày **2023-11-20** giới hạn block nằm trong khoảng `[18609284,18616430]`
+
+Lấy 100 block trong khoảng `[20659158,20659258]` để làm ví dụ demo và test logic pyspark. 

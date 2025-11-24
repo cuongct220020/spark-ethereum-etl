@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   spark-master:
-    image: apache/spark:3.5.1
+    image: apache/spark:latest
     container_name: spark-master
     hostname: spark-master
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
@@ -15,17 +15,17 @@ services:
       - SPARK_SSL_ENABLED=no
       - SPARK_PUBLIC_DNS=localhost
     ports:
-      - "8080:8080"
-      - "7077:7077"
+      - "7077:7077"  # Master port
+      - "8080:8080"  # Master Web UI
     volumes:
-      - ./data:/opt/spark/data
-      - ./apps:/opt/spark/apps
-      - spark-events:/opt/spark/spark-events
+      - ./data:/opt/spark/work-dir/data:ro  # Read-only mount
+      - ./apps:/opt/spark/work-dir/apps:ro
+      - ./spark-events:/opt/spark/spark-events
     networks:
       - spark-network
 
   spark-worker:
-    image: apache/spark:3.5.1
+    image: apache/spark:latest
     container_name: spark-worker
     hostname: spark-worker
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
@@ -35,19 +35,20 @@ services:
       - SPARK_WORKER_MEMORY=2g
       - SPARK_WORKER_WEBUI_PORT=8081
       - SPARK_PUBLIC_DNS=localhost
+      - PYSPARK_PYTHON=/usr/bin/python3
     ports:
-      - "8081:8081"
+      - "8081:8081"  # Worker Web UI
     depends_on:
       - spark-master
     volumes:
-      - ./data:/opt/spark/data
-      - ./apps:/opt/spark/apps
-      - spark-events:/opt/spark/spark-events
+      - ./data:/opt/spark/work-dir/data:ro
+      - ./apps:/opt/spark/work-dir/apps:ro
+      - ./spark-events:/opt/spark/spark-events
     networks:
       - spark-network
 
   spark-history-server:
-    image: apache/spark:3.5.1
+    image: apache/spark:latest
     container_name: spark-history
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.history.HistoryServer
     environment:
@@ -55,27 +56,10 @@ services:
     ports:
       - "18080:18080"
     volumes:
-      - spark-events:/opt/spark/spark-events
-    networks:
-      - spark-network
-
-  jupyter:
-    image: jupyter/pyspark-notebook:spark-3.5.0
-    container_name: jupyter
-    ports:
-      - "8888:8888" # Cổng truy cập Notebook từ trình duyệt
-    environment:
-      - SPARK_MASTER=spark://spark-master:7077 # Trỏ thẳng tới Master trong nội bộ
-    volumes:
-      - ./apps:/home/jovyan/work # Lưu notebook vào thư mục apps của bạn
-      - ./data:/opt/spark/data   # Mount dữ liệu giống hệt Worker để đọc file path khớp nhau
-      - spark-events:/opt/spark/spark-events # Để ghi log sự kiện
-    user: root # Cấp quyền root để mount vào /opt/spark/data không bị lỗi permission
+      - ./spark-events:/opt/spark/spark-events
     networks:
       - spark-network
 
 networks:
   spark-network:
     driver: bridge
-volumes:
-  spark-events:
